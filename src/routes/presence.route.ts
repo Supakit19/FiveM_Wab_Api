@@ -22,47 +22,44 @@ function pruneUsers() {
   }
 }
 
-export const presenceRoutes = new Elysia({ prefix: "/presence" })
-  .post(
-    "/heartbeat",
-    ({ body }) => {
-      const { id, name, role } = body as {
-        id: string;
-        name: string;
-        role: string;
-      };
+export const presenceRoutes = (app: any) =>
+  app
+    .post(
+      "/heartbeat",
+      ({ body }: any) => {
+        const { id, name, role } = body;
 
-      // Update user status
-      activeUsers.set(id, {
-        id,
-        name,
-        role,
-        lastSeen: Date.now(),
-      });
+        // Update user status
+        activeUsers.set(id, {
+          id,
+          name,
+          role,
+          lastSeen: Date.now(),
+        });
 
-      // Cleanup old users
+        // Cleanup old users
+        pruneUsers();
+
+        // Return current active users list
+        return Array.from(activeUsers.values()).map((u) => ({
+          id: u.id,
+          name: u.name,
+          role: u.role,
+        }));
+      },
+      {
+        body: t.Object({
+          id: t.String(),
+          name: t.String(),
+          role: t.String(),
+        }),
+      }
+    )
+    .get("/active", () => {
       pruneUsers();
-
-      // Return current active users list
       return Array.from(activeUsers.values()).map((u) => ({
         id: u.id,
         name: u.name,
         role: u.role,
       }));
-    },
-    {
-      body: t.Object({
-        id: t.String(),
-        name: t.String(),
-        role: t.String(),
-      }),
-    }
-  )
-  .get("/active", () => {
-    pruneUsers();
-    return Array.from(activeUsers.values()).map((u) => ({
-      id: u.id,
-      name: u.name,
-      role: u.role,
-    }));
-  });
+    });
