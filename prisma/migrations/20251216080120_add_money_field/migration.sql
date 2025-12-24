@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `users` ADD COLUMN `money` INTEGER NOT NULL DEFAULT 0;

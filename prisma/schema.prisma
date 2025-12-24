@@ -1,0 +1,133 @@
+// file: prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// 1. ข้อมูลผู้เล่น/ผู้ดูแล (Authentication & Profile)
+model User {
+  id              Int      @id @default(autoincrement())
+  inGameName      String   @map("in_game_name") // ชื่อที่ผู้เล่นเปลี่ยนเองได้
+  phoneNumber     String   @unique @map("phone_number") // เบอร์ในเกม (ใช้ล็อกอิน)
+  password        String
+  role            String   @default("USER") // 'ADMIN', 'USER'
+  profileImageUrl String?  @map("profile_image_url")
+  money           Int      @default(0) // เงินในเกม
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // ความสัมพันธ์
+  attendances      AttendanceLog[]
+  transactions     InventoryTransaction[]
+  gangTransactions GangTransaction[]
+
+  @@map("users")
+}
+
+// 2. บันทึกการเช็คชื่อ (Attendance System)
+model AttendanceLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  checkInTime DateTime @default(now()) @map("check_in_time")
+  status      String   @default("O") // 'O' = มา, '-' = ไม่มา (สำหรับบันทึกโดย Admin)
+
+  // ความสัมพันธ์
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, checkInTime], name: "user_daily_checkin") // ป้องกันการเช็คซ้ำวันละครั้ง
+  @@map("attendance_logs")
+}
+
+// 3. รายการไอเท็มในคลัง (Master Item List)
+model Item {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  currentStock Int      @map("current_stock") // ยอดคงเหลือปัจจุบัน
+  lastUpdated  DateTime @default(now()) @map("last_updated")
+
+  // ความสัมพันธ์
+  transactions InventoryTransaction[]
+
+  @@map("items")
+}
+
+// 4. บันทึกการเบิก/นำเข้า (Inventory Transaction Log)
+model InventoryTransaction {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  itemId          Int      @map("item_id")
+  quantity        Int // จำนวนที่เปลี่ยนแปลง (ลบเมื่อเบิก, บวกเมื่อนำเข้า)
+  transactionType String // 'WITHDRAWAL', 'DEPOSIT'
+  reason          String?
+  timestamp       DateTime @default(now())
+
+  // ความสัมพันธ์
+  user User @relation(fields: [userId], references: [id])
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@map("inventory_transactions")
+}
+
+// file: prisma/schema.prisma (เพิ่ม 2 Models ด้านล่าง)
+
+// 5. บันทึกทุกการกระทำในระบบ (Master Log)
+model ActionLog {
+  id          Int      @id @default(autoincrement())
+  performerId Int      @map("performer_id") // ID ของผู้กระทำ (Admin หรือ User)
+  actionType  String // เช่น 'USER_CHECKIN', 'ADMIN_UPDATE_USER', 'USER_WITHDRAW'
+  details     String // รายละเอียดของการกระทำ
+  timestamp   DateTime @default(now())
+
+  // เราไม่จำเป็นต้องสร้างความสัมพันธ์ @relation กับ User model ที่นี่ก็ได้
+  // เพื่อให้ Log ยังคงอยู่แม้ User ถูกลบไป (สำหรับ Record History)
+
+  @@map("action_logs")
+}
+
+// 6. ระบบประกาศ (Announcement System)
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String   @db.Text
+  status    String   @default("ACTIVE") // ACTIVE, DRAFT, EXPIRED
+  priority  String   @default("NORMAL") // URGENT, NORMAL
+  startDate DateTime @map("start_date") // วันที่เริ่มแสดง
+  endDate   DateTime @map("end_date") // วันที่สิ้นสุดการแสดงผล
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("announcements")
+}
+
+// 7. ตั้งค่าทั่วระบบ (Global Settings)
+model GlobalSetting {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("global_settings")
+}
+
+// 8. บันทึกการเงินของแก๊ง (Gang Wallet Transactions)
+model GangTransaction {
+  id            Int      @id @default(autoincrement())
+  type          String // 'INCOME' (ฝากเงินเข้า), 'EXPENSE' (เบิกเงินออก)
+  amount        Int // จำนวนเงิน
+  description   String // รายละเอียด/เหตุผล
+  balanceBefore Int      @map("balance_before") // ยอดก่อนทำรายการ
+  balanceAfter  Int      @map("balance_after") // ยอดหลังทำรายการ
+  createdById   Int      @map("created_by_id") // ผู้ทำรายการ
+  createdAt     DateTime @default(now())
+
+  // ความสัมพันธ์
+  createdBy User @relation(fields: [createdById], references: [id])
+
+  @@map("gang_transactions")
+}
