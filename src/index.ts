@@ -53,7 +53,7 @@ const app = new Elysia()
     jwt({
       name: "jwt",
       secret: process.env.JWT_SECRET,
-      exp: "7d",
+      exp: "10m",
     })
   )
   .get("/", () => "API is running")

@@ -290,15 +290,30 @@ export const dashboardRoutes = (app: any) =>
     .get("/activities", async (ctx: any) => {
       const { db } = ctx;
 
-      // Fetch recent action logs
+      // Define sensitive action types to exclude from dashboard
+      const EXCLUDED_ACTION_TYPES = [
+        "ADMIN_RESET_PASSWORD", // Password reset operations
+        "ADMIN_DELETE_USER", // User deletion operations
+        "ADMIN_UPDATE_USER_ROLE", // Role changes
+        "ADMIN_UPDATE_USER", // User profile updates by admin
+        "ADMIN_CREATE_USER", // New user creation
+        "USER_CHANGE_PASSWORD", // Password changes
+      ];
+
+      // Fetch recent action logs (fetch more to account for filtering)
       const activities = await db.actionLog.findMany({
-        take: 10,
+        take: 30, // Fetch more to ensure we have 10 after filtering
         orderBy: { timestamp: "desc" },
       });
 
+      // Filter out sensitive actions
+      const filteredActivities = activities
+        .filter((log: any) => !EXCLUDED_ACTION_TYPES.includes(log.actionType))
+        .slice(0, 10); // Take only 10 after filtering
+
       // Get unique performer IDs
       const performerIds = [
-        ...new Set(activities.map((log: any) => log.performerId)),
+        ...new Set(filteredActivities.map((log: any) => log.performerId)),
       ];
 
       // Fetch user names
@@ -318,7 +333,7 @@ export const dashboardRoutes = (app: any) =>
         return acc;
       }, {});
 
-      return activities.map((log: any) => ({
+      return filteredActivities.map((log: any) => ({
         id: log.id,
         action: log.details || log.actionType,
         user: userMap[log.performerId] || "System",
