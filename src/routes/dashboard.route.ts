@@ -91,11 +91,12 @@ export const dashboardRoutes = (app: any) =>
       const limit = parseInt(query?.limit as string) || 10;
       const skip = (page - 1) * limit;
 
-      const now = new Date();
-      const from = startOfDay(now);
-      const to = endOfDay(now);
+      // Use provided date or default to today
+      const targetDate = query?.date ? new Date(query.date) : new Date();
+      const from = startOfDay(targetDate);
+      const to = endOfDay(targetDate);
 
-      const [totalUsers, users] = await Promise.all([
+      const [totalUsers, users, roundsConfig] = await Promise.all([
         db.user.count(),
         db.user.findMany({
           skip,
@@ -113,32 +114,44 @@ export const dashboardRoutes = (app: any) =>
               select: {
                 checkInTime: true,
                 status: true,
+                session: true, // Select session ID
               },
-              take: 1,
+              // take: 1, // REMOVED: Need all sessions
             },
           },
           orderBy: { inGameName: "asc" },
         }),
+        db.globalSetting.findUnique({ where: { key: "attendance_rounds" } }),
       ]);
 
-      const userCheckinStatus = users.map((user: any) => ({
-        id: user.id,
-        inGameName: user.inGameName,
-        phoneNumber: user.phoneNumber,
-        role: user.role,
-        profileImageUrl: user.profileImageUrl,
-        hasCheckedIn: user.attendances.length > 0,
-        checkInTime: user.attendances[0]?.checkInTime || null,
-        status: user.attendances[0]?.status || null,
-      }));
+      const rounds = roundsConfig ? JSON.parse(roundsConfig.value) : [];
+
+      const userCheckinStatus = users.map((user: any) => {
+        // Map attendance to sessions
+        const sessionStatus: Record<number, any> = {};
+        user.attendances.forEach((a: any) => {
+          sessionStatus[a.session] = {
+            status: a.status,
+            checkInTime: a.checkInTime,
+          };
+        });
+
+        return {
+          id: user.id,
+          inGameName: user.inGameName,
+          phoneNumber: user.phoneNumber,
+          role: user.role,
+          profileImageUrl: user.profileImageUrl,
+          hasCheckedIn: user.attendances.length > 0,
+          // checkInTime: user.attendances[0]?.checkInTime || null, // Deprecated for single view
+          // status: user.attendances[0]?.status || null, // Deprecated
+          sessions: sessionStatus, // Return map of { sessionId: { status, time } }
+        };
+      });
 
       const totalPages = Math.ceil(totalUsers / limit);
 
-      // Calculate summary based on all users (separate query for accurate stats if needed, or just return partial stats?
-      // Actually, accurate stats are better. Let's do a quick aggregate for checked-in count if needed,
-      // but the previous code summary was based on "users" which was ALL users.
-      // For performance with pagination, we might want to avoid fetching ALL users just for a count.
-      // Let's do a fast count for summary.
+      // Simple count of who has checked in AT LEAST ONCE
       const checkedInCount = await db.attendanceLog.count({
         where: { checkInTime: { gte: from, lte: to } },
       });
@@ -160,6 +173,7 @@ export const dashboardRoutes = (app: any) =>
               ? Math.round((checkedInCount / totalUsers) * 100)
               : 0,
         },
+        roundsConfig: rounds,
       };
     })
     .post("/weekly-payment", async (ctx: any) => {
